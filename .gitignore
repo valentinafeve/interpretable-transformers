@@ -214,3 +214,5 @@ mlruns/
 mlflow.db
 
 *.pt
+
+vit_graph
