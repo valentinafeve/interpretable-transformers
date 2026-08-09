@@ -1,14 +1,15 @@
+import io
 import math
-import torch
-from torch import nn
+from datetime import datetime
+
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import mlflow
+import torch
 import torchvision
 import torchvision.transforms.functional as TF
 from PIL import Image
-import matplotlib.pyplot as plt
-import io 
-import matplotlib.cm as cm
-from datetime import datetime
+from torch import nn
 
 
 class NewGELUActivation(nn.Module):
@@ -42,9 +43,8 @@ class PatchEmbeddings(nn.Module):
         self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
 
     def forward(self, x):
-        # (batch_size, num_channels, image_size, image_size) -> (batch_size, num_patches, hidden_size)
-        x = self.projection(x)
-        x = x.flatten(2).transpose(1, 2)
+        x = self.projection(x) # (batch_size, hidden_size, num_patches**0.5, num_patches**0.5)
+        x = x.flatten(2).transpose(1, 2) 
         return x
 
 
@@ -68,7 +68,7 @@ class Embeddings(nn.Module):
         self.dropout = nn.Dropout(config["hidden_dropout_prob"])
 
     def forward(self, x):
-        x = self.patch_embeddings(x)
+        x = self.patch_embeddings(x) # (batch_size, num_patches, hidden_size)
         batch_size, _, _ = x.size()
         # Expand the [CLS] token to the batch size
         # (1, 1, hidden_size) -> (batch_size, 1, hidden_size)
@@ -77,7 +77,7 @@ class Embeddings(nn.Module):
         # This results in a sequence length of (num_patches + 1)
         x = torch.cat((cls_tokens, x), dim=1)
         x = x + self.position_embeddings
-        x = self.dropout(x)
+        x = self.dropout(x) # (batch_size, num_patches + 1, hidden_size)
         return x
 
 
@@ -103,9 +103,9 @@ class AttentionHead(nn.Module):
         # The same input is used to generate the query, key, and value,
         # so it's usually called self-attention.
         # (batch_size, sequence_length, hidden_size) -> (batch_size, sequence_length, attention_head_size)
-        query = self.query(x)
-        key = self.key(x)
-        value = self.value(x)
+        query = self.query(x) # (batch_size, sequence_length, attention_head_size)
+        key = self.key(x) # (batch_size, sequence_length, attention_head_size)
+        value = self.value(x) # (batch_size, sequence_length, attention_head_size)
         # Calculate the attention scores
         # softmax(Q*K.T/sqrt(head_size))*V
         attention_scores = torch.matmul(query, key.transpose(-1, -2))
@@ -113,7 +113,7 @@ class AttentionHead(nn.Module):
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
         attention_probs = self.dropout(attention_probs)
         # Calculate the attention output
-        attention_output = torch.matmul(attention_probs, value)
+        attention_output = torch.matmul(attention_probs, value) # (batch_size, sequence_length, attention_head_size) 
         return (attention_output, attention_probs)
 
 
@@ -197,9 +197,9 @@ class Block(nn.Module):
         attention_output, attention_probs = \
             self.attention(self.layernorm_1(x), output_attentions=output_attentions)
         # Skip connection
-        x = x + attention_output
+        x = x + attention_output # (batch_size, sequence_length, hidden_size)
         # Feed-forward network
-        mlp_output = self.mlp(self.layernorm_2(x))
+        mlp_output = self.mlp(self.layernorm_2(x)) # (batch_size, sequence_length, hidden_size)
         # Skip connection
         x = x + mlp_output
         # Return the transformer block's output and the attention probabilities (optional)
@@ -224,6 +224,13 @@ class Encoder(nn.Module):
             self.blocks.append(block)
 
     def forward(self, x, output_attentions=False):
+        """"
+         Calculate the transformer block's output for each block and return the final output.
+         param x: (batch_size, sequence_length, hidden_size)
+         return: Tuple (batch_size, sequence_length, hidden_size), List of attention probabilities for each block (optional)
+         If output_attentions is False, the attention probabilities will not be returned and will be set to None.
+         If output_attentions is True, the attention probabilities will be returned as a list of tensors, where each tensor has the shape (batch_size, num_attention_heads, sequence_length, sequence_length).
+        """
         # Calculate the transformer block's output for each block
         all_attentions = []
         for block in self.blocks:
@@ -254,7 +261,7 @@ class MLP(nn.Module):
         x = self.dense_1(x)
         x = self.activation(x)
         x = self.dense_2(x)
-        x = self.dropout(x)
+        x = self.dropout(x) # (batch_size, sequence_length, hidden_size)
         return x
 
 
@@ -293,10 +300,10 @@ class MultiHeadAttention(nn.Module):
         # Calculate the attention output for each attention head
         attention_outputs = [head(x) for head in self.heads]
         # Concatenate the attention outputs from each attention head
-        attention_output = torch.cat([attention_output for attention_output, _ in attention_outputs], dim=-1)
+        attention_output = torch.cat([attention_output for attention_output, _ in attention_outputs], dim=-1) # List of (batch_size, sequence_length, attention_head_size) -> (batch_size, sequence_length, all_head_size)
         # Project the concatenated attention output back to the hidden size
         attention_output = self.output_projection(attention_output)
-        attention_output = self.output_dropout(attention_output)
+        attention_output = self.output_dropout(attention_output) # (batch_size, sequence_length, hidden_size)
         # Return the attention output and the attention probabilities (optional)
         if not output_attentions:
             return (attention_output, None)
@@ -328,7 +335,7 @@ class ViTForClassfication(nn.Module):
 
     def forward(self, x, output_attentions=False):
         # Calculate the embedding output
-        embedding_output = self.embedding(x)
+        embedding_output = self.embedding(x) # (batch_size, num_patches + 1, hidden_size)
         # Calculate the encoder's output
         encoder_output, all_attentions = self.encoder(embedding_output, output_attentions=output_attentions)
         # Calculate the logits, take the [CLS] token's output as features for classification

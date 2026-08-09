@@ -1,7 +1,10 @@
-import os
 import json
+import os
+
 import torch
-from model import ViTForClassfication
+
+from .model import ViTForClassfication
+
 
 def save_experiment(experiment_name, config, model, data, base_dir="experiments"):
     """"
