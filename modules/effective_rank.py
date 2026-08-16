@@ -11,10 +11,12 @@ def effective_rank(A: torch.Tensor) -> torch.Tensor:
     se calcula sobre las últimas dos dimensiones, devolviendo shape (...,).
     Cumple 1 <= erank(A) <= rank(A) <= min(M, N).
     """
-    singular_values = torch.linalg.svdvals(A)  # (..., Q)
+    # torch.linalg.svdvals no está implementado en el backend MPS; se calcula
+    # en CPU y el resultado se devuelve en el device original de A.
+    singular_values = torch.linalg.svdvals(A.cpu())  # (..., Q)
     p = singular_values / singular_values.sum(dim=-1, keepdim=True)
 
     log_p = torch.where(p > 0, torch.log(p), torch.zeros_like(p))
     entropy = -(p * log_p).sum(dim=-1)
 
-    return torch.exp(entropy)
+    return torch.exp(entropy).to(A.device)
